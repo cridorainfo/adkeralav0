@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "paths": {
+      "@adkerala/types": ["../types/src/index.ts"],
+      "@adkerala/utils": ["../utils/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}
