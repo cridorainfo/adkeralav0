@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.npm
+
+# Build outputs
+.next/
+dist/
+build/
+out/
+
+# Electron
+apps/electron/dist/
+apps/electron/out/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Prisma
+prisma/migrations/*.sql.bak
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# TypeScript
+*.tsbuildinfo
+
+# SQLite (local electron DB)
+*.db
+*.db-shm
+*.db-wal
+
+# PlatformIO
+esp32/.pio/
+esp32/.vscode/
+
+# Misc
+.turbo/

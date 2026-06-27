@@ -1,0 +1,477 @@
+// adkerala – Prisma schema
+// Railway: PostgreSQL 15+
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Org / Multi-tenancy ──────────────────────────────────────────────────────
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  nameMl    String   @default("")
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users         User[]
+  buses         Bus[]
+  routes        Route[]
+  stops         Stop[]
+  ownerEarnings OwnerEarnings?
+  payouts       Payout[]
+  stopSubmissions StopSubmission[]
+  busRouteAssignments BusRouteAssignment[]
+
+  @@map("organizations")
+}
+
+// ─── Users & Auth ─────────────────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  orgId     String
+  email     String?  @unique
+  phone     String?  @unique
+  name      String
+  role      UserRole
+  password  String   // bcrypt hash
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org            Organization     @relation(fields: [orgId], references: [id])
+  sessions        JourneySession[] @relation("DriverSessions")
+  stopSubmissions StopSubmission[]
+  reviewedSubmissions StopSubmission[] @relation("ReviewedBy")
+
+  @@index([orgId])
+  @@map("users")
+}
+
+enum UserRole {
+  platform_admin
+  bus_owner
+  driver
+  display
+  esp32
+  advertiser
+}
+
+// ─── Districts ────────────────────────────────────────────────────────────────
+
+model District {
+  id     String @id @default(cuid())
+  name   String @unique
+  nameMl String
+
+  routes Route[]
+  buses  Bus[]
+
+  @@map("districts")
+}
+
+// ─── Stops (org-level shared library) ────────────────────────────────────────
+
+model Stop {
+  id              String   @id @default(cuid())
+  orgId           String
+  name            String
+  nameMl          String   @default("")
+  lat             Float
+  lng             Float
+  audioUrl        String?  // Cloudflare R2 URL
+  geofenceRadius  Int      @default(50) // metres
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  org        Organization @relation(fields: [orgId], references: [id])
+  routeStops RouteStop[]
+
+  // Full-text search index (English + Malayalam)
+  @@index([orgId])
+  @@map("stops")
+}
+
+// ─── Routes ───────────────────────────────────────────────────────────────────
+
+model Route {
+  id         String   @id @default(cuid())
+  orgId      String
+  districtId String
+  name       String
+  nameMl     String   @default("")
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  org        Organization @relation(fields: [orgId], references: [id])
+  district   District     @relation(fields: [districtId], references: [id])
+  stops      RouteStop[]
+  sessions   JourneySession[]
+  busAssignments BusRouteAssignment[]
+  adTargets  AdCampaignRouteTarget[]
+  impressions Impression[]
+
+  @@index([orgId])
+  @@map("routes")
+}
+
+model RouteStop {
+  id      String @id @default(cuid())
+  routeId String
+  stopId  String
+  order   Int
+
+  route Route @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  stop  Stop  @relation(fields: [stopId], references: [id])
+
+  @@unique([routeId, order])
+  @@unique([routeId, stopId])
+  @@map("route_stops")
+}
+
+// ─── Buses ────────────────────────────────────────────────────────────────────
+
+model Bus {
+  id          String    @id @default(cuid())
+  orgId       String
+  districtId  String?
+  numberPlate String    @unique
+  name        String?
+  status      BusStatus @default(active)
+  displayToken String?  @unique // token the Electron/Android display uses to auth
+  lastLat     Float?
+  lastLng     Float?
+  lastSeen    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  org            Organization         @relation(fields: [orgId], references: [id], map: "buses_org_orgId_fkey")
+  district       District?            @relation(fields: [districtId], references: [id])
+  sessions       JourneySession[]
+  routeAssignments BusRouteAssignment[]
+  impressions    Impression[]
+  earnings       OwnerEarnings?       @relation(fields: [orgId], references: [orgId], map: "buses_earnings_orgId_fkey")
+  audioEvents    AudioSilentEvent[]
+  gpsBuffer      GpsBufferPoint[]
+
+  @@index([orgId])
+  @@map("buses")
+}
+
+enum BusStatus {
+  active
+  inactive
+  maintenance
+}
+
+model BusRouteAssignment {
+  id        String   @id @default(cuid())
+  orgId     String
+  busId     String
+  routeId   String
+  assignedAt DateTime @default(now())
+
+  org   Organization @relation(fields: [orgId], references: [id])
+  bus   Bus          @relation(fields: [busId], references: [id])
+  route Route        @relation(fields: [routeId], references: [id])
+
+  @@unique([busId, routeId])
+  @@map("bus_route_assignments")
+}
+
+// ─── Journey Sessions ─────────────────────────────────────────────────────────
+
+model JourneySession {
+  id               String        @id @default(cuid())
+  busId            String
+  driverId         String
+  routeId          String
+  currentStopIndex Int           @default(0)
+  status           SessionStatus @default(active)
+  pairingCode      String?       @unique
+  startedAt        DateTime      @default(now())
+  endedAt          DateTime?
+
+  bus         Bus         @relation(fields: [busId], references: [id])
+  driver      User        @relation("DriverSessions", fields: [driverId], references: [id])
+  route       Route       @relation(fields: [routeId], references: [id])
+  impressions Impression[]
+  audioEvents AudioSilentEvent[]
+
+  @@index([busId, status])
+  @@map("journey_sessions")
+}
+
+enum SessionStatus {
+  active
+  paused
+  ended
+}
+
+// ─── GPS Buffer (offline queue for cloud sync) ────────────────────────────────
+
+model GpsBufferPoint {
+  id        String   @id @default(cuid())
+  busId     String
+  lat       Float
+  lng       Float
+  accuracy  Float?
+  speed     Float?
+  heading   Float?
+  recordedAt DateTime
+  syncedAt  DateTime?
+
+  bus Bus @relation(fields: [busId], references: [id])
+
+  @@index([busId, syncedAt])
+  @@map("gps_buffer_points")
+}
+
+// ─── Advertisers ─────────────────────────────────────────────────────────────
+
+model Advertiser {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  phone     String?
+  password  String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  campaigns AdCampaign[]
+
+  @@map("advertisers")
+}
+
+// ─── Ad Campaigns ─────────────────────────────────────────────────────────────
+
+model AdCampaign {
+  id             String           @id @default(cuid())
+  advertiserId   String
+  name           String
+  status         AdStatus         @default(draft)
+  advertiserCpm  Float            // what advertiser pays per 1000 impressions
+  ownerCpm       Float            // what bus owner earns per 1000 impressions
+  totalBudget    Float
+  spentAmount    Float            @default(0)
+  targetType     CampaignTargetType @default(all)
+  startsAt       DateTime?
+  endsAt         DateTime?
+  timeFrom       String?          // HH:MM  e.g. "06:00"
+  timeTo         String?          // HH:MM  e.g. "22:00"
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  advertiser   Advertiser              @relation(fields: [advertiserId], references: [id])
+  ads          Advertisement[]
+  routeTargets AdCampaignRouteTarget[]
+  districtTargets AdCampaignDistrictTarget[]
+  busTargets   AdCampaignBusTarget[]
+  impressions  Impression[]
+
+  @@index([status])
+  @@map("ad_campaigns")
+}
+
+enum AdStatus {
+  draft
+  active
+  paused
+  exhausted
+  ended
+}
+
+enum CampaignTargetType {
+  all
+  route
+  district
+  bus
+}
+
+model AdCampaignRouteTarget {
+  id         String @id @default(cuid())
+  campaignId String
+  routeId    String
+
+  campaign AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  route    Route      @relation(fields: [routeId], references: [id])
+
+  @@unique([campaignId, routeId])
+  @@map("ad_campaign_route_targets")
+}
+
+model AdCampaignDistrictTarget {
+  id         String @id @default(cuid())
+  campaignId String
+  districtId String
+
+  campaign AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, districtId])
+  @@map("ad_campaign_district_targets")
+}
+
+model AdCampaignBusTarget {
+  id         String @id @default(cuid())
+  campaignId String
+  busId      String
+
+  campaign AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, busId])
+  @@map("ad_campaign_bus_targets")
+}
+
+// ─── Advertisements (individual creatives) ───────────────────────────────────
+
+model Advertisement {
+  id              String    @id @default(cuid())
+  campaignId      String
+  format          AdFormat
+  mediaUrl        String    // Cloudflare R2 URL
+  durationSeconds Int       @default(15)
+  active          Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+
+  campaign    AdCampaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  impressions Impression[]
+
+  @@map("advertisements")
+}
+
+enum AdFormat {
+  banner
+  fullscreen
+}
+
+// ─── Impressions ──────────────────────────────────────────────────────────────
+
+model Impression {
+  id              String   @id @default(cuid())
+  adId            String
+  campaignId      String
+  busId           String
+  sessionId       String
+  routeId         String
+  districtId      String
+  format          AdFormat
+  durationSeconds Int
+  advertiserCharge Float   // = campaign.advertiserCpm / 1000
+  ownerEarning    Float    // = campaign.ownerCpm / 1000
+  platformMargin  Float    // = advertiserCharge - ownerEarning
+  advertisedAt    DateTime
+
+  ad       Advertisement @relation(fields: [adId], references: [id])
+  campaign AdCampaign    @relation(fields: [campaignId], references: [id])
+  bus      Bus           @relation(fields: [busId], references: [id])
+  session  JourneySession @relation(fields: [sessionId], references: [id])
+  route    Route         @relation(fields: [routeId], references: [id])
+
+  @@index([busId, advertisedAt])
+  @@index([campaignId, advertisedAt])
+  @@map("impressions")
+}
+
+// ─── Revenue ─────────────────────────────────────────────────────────────────
+
+// Singleton – one row, enforced in application layer
+model RevenueConfig {
+  id                  String   @id @default("singleton")
+  defaultAdvertiserCpm Float   @default(20)
+  defaultOwnerCpm      Float   @default(12)
+  updatedAt           DateTime @updatedAt
+
+  @@map("revenue_config")
+}
+
+model OwnerEarnings {
+  orgId       String @id
+  totalEarned Float  @default(0)
+  totalPaid   Float  @default(0)
+
+  org     Organization @relation(fields: [orgId], references: [id])
+  buses   Bus[]
+  payouts Payout[]
+
+  @@map("owner_earnings")
+}
+
+model Payout {
+  id          String       @id @default(cuid())
+  orgId       String
+  amount      Float
+  status      PayoutStatus @default(pending)
+  method      String       // "upi" | "bank"
+  reference   String?      // UPI ID or bank account ref
+  requestedAt DateTime     @default(now())
+  processedAt DateTime?
+  note        String?
+
+  org      Organization  @relation(fields: [orgId], references: [id], map: "payouts_org_orgId_fkey")
+  earnings OwnerEarnings @relation(fields: [orgId], references: [orgId], map: "payouts_earnings_orgId_fkey")
+
+  @@index([orgId, status])
+  @@map("payouts")
+}
+
+enum PayoutStatus {
+  pending
+  processing
+  paid
+  failed
+}
+
+// ─── Audio monitoring ─────────────────────────────────────────────────────────
+
+model AudioSilentEvent {
+  id         String   @id @default(cuid())
+  busId      String
+  sessionId  String
+  stopName   String
+  occurredAt DateTime @default(now())
+
+  bus     Bus            @relation(fields: [busId], references: [id])
+  session JourneySession @relation(fields: [sessionId], references: [id])
+
+  @@index([busId, occurredAt])
+  @@map("audio_silent_events")
+}
+
+// ─── Stop Submissions (driver maps new place) ─────────────────────────────────
+
+model StopSubmission {
+  id                 String               @id @default(cuid())
+  orgId              String
+  submittedByDriverId String
+  nameDraft          String
+  lat                Float
+  lng                Float
+  status             StopSubmissionStatus @default(pending)
+  reviewedByAdminId  String?
+  nameApproved       String?
+  nameMlApproved     String?
+  audioUrl           String?
+  createdAt          DateTime             @default(now())
+  reviewedAt         DateTime?
+
+  org        Organization @relation(fields: [orgId], references: [id])
+  submittedBy User        @relation(fields: [submittedByDriverId], references: [id])
+  reviewedBy  User?       @relation("ReviewedBy", fields: [reviewedByAdminId], references: [id])
+
+  @@index([orgId, status])
+  @@map("stop_submissions")
+}
+
+enum StopSubmissionStatus {
+  pending
+  approved
+  rejected
+}

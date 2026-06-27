@@ -1,0 +1,26 @@
+{
+  "name": "adkerala Driver",
+  "short_name": "adkerala",
+  "description": "adkerala bus driver control app",
+  "start_url": "/driver",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#f97316",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["transportation", "utilities"],
+  "screenshots": []
+}

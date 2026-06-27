@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ml">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Offline – adkerala</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      background: #003318;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: system-ui, sans-serif;
+      padding: 2rem;
+    }
+    img { width: 200px; margin-bottom: 2rem; filter: brightness(0) invert(1) opacity(0.8); }
+    h1 { font-size: 1.75rem; color: #D4A017; margin-bottom: 0.75rem; }
+    p  { color: #99DDB3; font-size: 1rem; text-align: center; max-width: 320px; line-height: 1.6; }
+    .dot {
+      width: 12px; height: 12px; border-radius: 50%;
+      background: #D4A017; margin-top: 2rem;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.8); }
+    }
+  </style>
+</head>
+<body>
+  <img src="/adkerala-logo.svg" alt="adkerala" />
+  <h1>You're offline</h1>
+  <p>No internet connection detected. The app will reconnect automatically when the bus WiFi or SIM signal is restored.</p>
+  <div class="dot"></div>
+</body>
+</html>

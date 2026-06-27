@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "outDir": ".",
+    "rootDir": ".",
+    "noEmit": false,
+    "paths": {
+      "@adkerala/types": ["../../packages/types/src/index.ts"],
+      "@adkerala/utils": ["../../packages/utils/src/index.ts"]
+    }
+  },
+  "include": ["server.ts"]
+}
